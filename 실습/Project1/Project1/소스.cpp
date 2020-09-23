@@ -16,8 +16,8 @@ void p_lock(int my_id)
     int other = 1 - my_id;
     flag[my_id] = true;
     victim = my_id;
-    _asm mfence;
-    //atomic_thread_fence(memory_order_seq_cst);
+    //_asm mfence;
+    atomic_thread_fence(memory_order_seq_cst);
     while ((true == flag[other]) && (victim == my_id));
 }
 
