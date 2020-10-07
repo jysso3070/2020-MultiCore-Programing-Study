@@ -60,7 +60,7 @@ public:
 		}
 		else {
 			NODE* new_node = new NODE(x);
-			new_node->next = curr->next;
+			new_node->next = curr;
 			pred->next = new_node;
 			m_lock.unlock();
 			return true;
@@ -122,7 +122,7 @@ void benchmark(int num_threads)
 			my_set.Add(rand() % KEY_RANGE);
 			break;
 		case 1:
-			//my_set.Remove(rand() % KEY_RANGE);
+			my_set.Remove(rand() % KEY_RANGE);
 			break;
 		case 2:
 			my_set.Contains(rand() % KEY_RANGE);
