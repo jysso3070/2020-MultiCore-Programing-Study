@@ -14,6 +14,7 @@ class NODE {
 public:
 	int key;
 	NODE* next;
+	mutex n_lock;
 
 	NODE() { next = nullptr; }
 	NODE(int x) {
@@ -21,19 +22,25 @@ public:
 		key = x;
 	}
 	~NODE() {}
+	void Lock() {
+		n_lock.lock();
+	}
+	void Unlock() {
+		n_lock.unlock();
+	}
 };
 
-class CLIST {
+class FLIST {
 	NODE head, tail;
-	mutex m_lock;
+	//mutex m_lock;
 public:
-	CLIST()
+	FLIST()
 	{
 		head.key = 0x8000'0000;
 		tail.key = 0x7FFF'FFFF;
 		head.next = &tail;
 	}
-	~CLIST() {}
+	~FLIST() {}
 	void clear()
 	{
 		NODE* ptr = head.next;
@@ -46,70 +53,88 @@ public:
 	}
 	bool Add(int x)
 	{
+		//pred락
+		head.Lock();
 		NODE* pred = &head; // head주소는 항상 고정이기때문에 이 밑에 lock
-		m_lock.lock();
 		NODE* curr = pred->next;
+		curr->Lock();
 		while (curr->key < x) {
+			//pred언락
+			pred->Unlock();
 			pred = curr;
 			curr = curr->next;
+			curr->Lock();
+			//curr락
 		}
 
 		if (curr->key == x) {
-			m_lock.unlock();
+			curr->Unlock();
+			pred->Unlock();
 			return false;
 		}
 		else {
 			NODE* new_node = new NODE(x);
 			new_node->next = curr;
 			pred->next = new_node;
-			m_lock.unlock();
+			curr->Unlock();
+			pred->Unlock();
 			return true;
 		}
 
 	}
 	bool Remove(int x)
 	{
+		head.Lock();
 		NODE* pred = &head; // head주소는 항상 고정이기때문에 이 밑에 lock
-		m_lock.lock();
 		NODE* curr = pred->next;
+		curr->Lock();
 		while (curr->key < x) {
+			pred->Unlock();
 			pred = curr;
 			curr = curr->next;
+			curr->Lock();
 		}
 
 		if (curr->key != x) {
-			m_lock.unlock();
+			curr->Unlock();
+			pred->Unlock();
 			return false;
 		}
 		else {
 			pred->next = curr->next;
+			curr->Unlock();
 			delete curr;
-			m_lock.unlock();
+			pred->Unlock();
 			return true;
 		}
 	}
 	bool Contains(int x)
 	{
+		head.Lock();
 		NODE* pred = &head; // head주소는 항상 고정이기때문에 이 밑에 lock
-		m_lock.lock();
 		NODE* curr = pred->next;
+		curr->Lock();
 		while (curr->key < x) {
+			pred->Unlock();
 			pred = curr;
 			curr = curr->next;
+			curr->Lock();
 		}
 
 		if (curr->key != x) {
-			m_lock.unlock();
+			curr->Unlock();
+			pred->Unlock();
 			return false;
 		}
 		else {
-			m_lock.unlock();
+			curr->Unlock();
+			pred->Unlock();
 			return true;
 		}
 	}
 	void display20() {
 		NODE* ptr = head.next;
-		for (int i = 0; i < 20 ; ++i) {
+		for (int i = 0; i < 20; ++i) {
 			if (&tail == ptr) break;
 			cout << ptr->key << ", ";
 			ptr = ptr->next;
@@ -121,7 +146,7 @@ public:
 
 const auto NUM_TEST = 400'0000;
 const auto KEY_RANGE = 1000;
-CLIST my_set;
+FLIST my_set;
 
 void benchmark(int num_threads)
 {
