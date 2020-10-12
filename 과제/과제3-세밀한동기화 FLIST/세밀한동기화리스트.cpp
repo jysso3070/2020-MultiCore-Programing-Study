@@ -53,85 +53,84 @@ public:
 	}
 	bool Add(int x)
 	{
-		
-		NODE* pred = &head; 
+		//pred락
+		head.Lock();
+		NODE* pred = &head; // head주소는 항상 고정이기때문에 이 밑에 lock
 		NODE* curr = pred->next;
+		curr->Lock();
 		while (curr->key < x) {
+			//pred언락
+			pred->Unlock();
 			pred = curr;
 			curr = curr->next;
+			curr->Lock();
+			//curr락
 		}
-		pred->Lock();
-		curr->Lock();
-		if (validate(pred, curr)) {
-			if (curr->key == x) {
-				curr->Unlock();
-				pred->Unlock();
-				return false;
-			}
-			else {
-				NODE* new_node = new NODE(x);
-				new_node->next = curr;
-				pred->next = new_node;
-				curr->Unlock();
-				pred->Unlock();
-				return true;
-			}
+
+		if (curr->key == x) {
+			curr->Unlock();
+			pred->Unlock();
+			return false;
 		}
-		// validate 가 false일때 락 걸어둔 노드 언락
-		curr->Unlock();
-		pred->Unlock();
+		else {
+			NODE* new_node = new NODE(x);
+			new_node->next = curr;
+			pred->next = new_node;
+			curr->Unlock();
+			pred->Unlock();
+			return true;
+		}
+
 	}
 	bool Remove(int x)
 	{
-		NODE* pred = &head; 
+		head.Lock();
+		NODE* pred = &head; // head주소는 항상 고정이기때문에 이 밑에 lock
 		NODE* curr = pred->next;
+		curr->Lock();
 		while (curr->key < x) {
+			pred->Unlock();
 			pred = curr;
 			curr = curr->next;
+			curr->Lock();
 		}
-		pred->Lock();
-		curr->Lock();
-		if (validate(pred, curr)) {
-			if (curr->key != x) {
-				curr->Unlock();
-				pred->Unlock();
-				return false;
-			}
-			else {
-				pred->next = curr->next;
-				curr->Unlock();
-				pred->Unlock();
-				return true;
-			}
+
+		if (curr->key != x) {
+			curr->Unlock();
+			pred->Unlock();
+			return false;
 		}
-		// validate 가 false일때 락 걸어둔 노드 언락
-		curr->Unlock();
-		pred->Unlock();
+		else {
+			pred->next = curr->next;
+			curr->Unlock();
+			delete curr;
+			pred->Unlock();
+			return true;
+		}
 	}
 	bool Contains(int x)
 	{
-		NODE* pred = &head; 
+		head.Lock();
+		NODE* pred = &head; // head주소는 항상 고정이기때문에 이 밑에 lock
 		NODE* curr = pred->next;
+		curr->Lock();
 		while (curr->key < x) {
+			pred->Unlock();
 			pred = curr;
 			curr = curr->next;
+			curr->Lock();
 		}
-		pred->Lock();
-		curr->Lock();
-		if (validate(pred, curr)) {
-			if (curr->key != x) {
-				curr->Unlock();
-				pred->Unlock();
-				return false;
-			}
-			else {
-				curr->Unlock();
-				pred->Unlock();
-				return true;
-			}
+
+		if (curr->key != x) {
+			curr->Unlock();
+			pred->Unlock();
+			return false;
 		}
-		curr->Unlock();
-		pred->Unlock();
+		else {
+			curr->Unlock();
+			pred->Unlock();
+			return true;
+		}
 	}
 	void display20() {
 		NODE* ptr = head.next;
@@ -141,16 +140,6 @@ public:
 			ptr = ptr->next;
 		}
 		cout << endl;
-	}
-	bool validate(NODE* pred, NODE* curr) {
-		NODE* node = &head;
-		while (node->key <= pred->key) {
-			if (node == pred) {
-				return pred->next == curr;
-			}
-			node = node->next;
-		}
-		return false;
 	}
 };
 
