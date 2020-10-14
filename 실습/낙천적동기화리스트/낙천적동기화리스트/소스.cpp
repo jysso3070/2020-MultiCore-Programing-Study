@@ -30,17 +30,23 @@ public:
 	}
 };
 
-class FLIST {
+class null_mutex {
+public:
+	void Lock() {};
+	void Unlock() {};
+};
+
+class OLIST {
 	NODE head, tail;
 	//mutex m_lock;
 public:
-	FLIST()
+	OLIST()
 	{
 		head.key = 0x8000'0000;
 		tail.key = 0x7FFF'FFFF;
 		head.next = &tail;
 	}
-	~FLIST() {}
+	~OLIST() {}
 	void clear()
 	{
 		NODE* ptr = head.next;
@@ -53,16 +59,21 @@ public:
 	}
 	bool Add(int x)
 	{
-		
-		NODE* pred = &head; 
-		NODE* curr = pred->next;
-		while (curr->key < x) {
-			pred = curr;
-			curr = curr->next;
-		}
-		pred->Lock();
-		curr->Lock();
-		if (validate(pred, curr)) {
+		while (true) {
+			NODE* pred = &head;
+			NODE* curr = pred->next;
+			while (curr->key < x) {
+				pred = curr;
+				curr = curr->next;
+			}
+			pred->Lock();
+			curr->Lock();
+
+			if (false == validate(pred, curr)) { // validate 가 false일때 락 걸어둔 노드 언락
+				curr->Unlock();
+				pred->Unlock();
+				continue;
+			}
 			if (curr->key == x) {
 				curr->Unlock();
 				pred->Unlock();
@@ -77,21 +88,25 @@ public:
 				return true;
 			}
 		}
-		// validate 가 false일때 락 걸어둔 노드 언락
-		curr->Unlock();
-		pred->Unlock();
 	}
 	bool Remove(int x)
 	{
-		NODE* pred = &head; 
-		NODE* curr = pred->next;
-		while (curr->key < x) {
-			pred = curr;
-			curr = curr->next;
-		}
-		pred->Lock();
-		curr->Lock();
-		if (validate(pred, curr)) {
+		while (true) {
+			NODE* pred = &head;
+			NODE* curr = pred->next;
+			while (curr->key < x) {
+				pred = curr;
+				curr = curr->next;
+			}
+			pred->Lock();
+			curr->Lock();
+
+			if (false == validate(pred, curr)) { // validate 가 false일때 락 걸어둔 노드 언락
+				curr->Unlock();
+				pred->Unlock();
+				continue;
+			}
+
 			if (curr->key != x) {
 				curr->Unlock();
 				pred->Unlock();
@@ -101,37 +116,40 @@ public:
 				pred->next = curr->next;
 				curr->Unlock();
 				pred->Unlock();
+				// delete 하지 않는다
 				return true;
 			}
 		}
-		// validate 가 false일때 락 걸어둔 노드 언락
-		curr->Unlock();
-		pred->Unlock();
 	}
 	bool Contains(int x)
 	{
-		NODE* pred = &head; 
-		NODE* curr = pred->next;
-		while (curr->key < x) {
-			pred = curr;
-			curr = curr->next;
-		}
-		pred->Lock();
-		curr->Lock();
-		if (validate(pred, curr)) {
-			if (curr->key != x) {
+		while (true) {
+			NODE* pred = &head;
+			NODE* curr = pred->next;
+			while (curr->key < x) {
+				pred = curr;
+				curr = curr->next;
+			}
+			pred->Lock();
+			curr->Lock();
+
+			if (false == validate(pred, curr)) { // validate 가 false일때 락 걸어둔 노드 언락
 				curr->Unlock();
 				pred->Unlock();
-				return false;
+				continue;
+			}
+
+			if (curr->key == x) {
+				curr->Unlock();
+				pred->Unlock();
+				return true;
 			}
 			else {
 				curr->Unlock();
 				pred->Unlock();
-				return true;
+				return false;
 			}
 		}
-		curr->Unlock();
-		pred->Unlock();
 	}
 	void display20() {
 		NODE* ptr = head.next;
@@ -157,7 +175,7 @@ public:
 
 const auto NUM_TEST = 400'0000;
 const auto KEY_RANGE = 1000;
-FLIST my_set;
+OLIST my_set;
 
 void benchmark(int num_threads)
 {

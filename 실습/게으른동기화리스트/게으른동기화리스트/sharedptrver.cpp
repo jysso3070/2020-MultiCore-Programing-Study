@@ -10,18 +10,21 @@ using namespace std;
 using namespace chrono;
 
 
-class NODE {
+class SPNODE {
 public:
 	int key;
-	NODE* next;
+	shared_ptr<SPNODE> next;
 	mutex n_lock;
+	bool marked;
 
-	NODE() { next = nullptr; }
-	NODE(int x) {
-		next = nullptr;
-		key = x;
+	SPNODE() {
+		marked = false;
 	}
-	~NODE() {}
+	SPNODE(int x) {
+		key = x;
+		marked = false;
+	}
+	~SPNODE() {}
 	void Lock() {
 		n_lock.lock();
 	}
@@ -36,32 +39,30 @@ public:
 	void Unlock() {};
 };
 
-class OLIST {
-	NODE head, tail;
+class SPLLIST {
+	shared_ptr<SPNODE> head, tail;
 	//mutex m_lock;
 public:
-	OLIST()
+	SPLLIST()
 	{
-		head.key = 0x8000'0000;
-		tail.key = 0x7FFF'FFFF;
-		head.next = &tail;
+		head = make_shared<SPNODE>(0x8000'0000);
+		tail = make_shared<SPNODE>(0x7FFF'FFFF);
+		head->next = tail;
 	}
-	~OLIST() {}
+	~SPLLIST() {}
 	void clear()
 	{
-		NODE* ptr = head.next;
-		while (ptr != &tail) {
-			NODE* to_delete = ptr;
-			ptr = ptr->next;
-			delete to_delete;
-		}
-		head.next = &tail;
+		head->next = tail;
+	}
+	// 오버헤드를 줄이기 위해 const와 래퍼런스로 넘김
+	bool validate(const shared_ptr<SPNODE> &pred, const shared_ptr<SPNODE> &curr) {
+		return !pred->marked && !curr->marked && pred->next == curr;
 	}
 	bool Add(int x)
 	{
 		while (true) {
-			NODE* pred = &head;
-			NODE* curr = pred->next;
+			shared_ptr<SPNODE> pred = head;
+			shared_ptr<SPNODE> curr = pred->next;
 			while (curr->key < x) {
 				pred = curr;
 				curr = curr->next;
@@ -80,7 +81,7 @@ public:
 				return false;
 			}
 			else {
-				NODE* new_node = new NODE(x);
+				shared_ptr<SPNODE> new_node = make_shared<SPNODE>(x);
 				new_node->next = curr;
 				pred->next = new_node;
 				curr->Unlock();
@@ -92,8 +93,8 @@ public:
 	bool Remove(int x)
 	{
 		while (true) {
-			NODE* pred = &head;
-			NODE* curr = pred->next;
+			SPNODE* pred = &head;
+			SPNODE* curr = pred->next;
 			while (curr->key < x) {
 				pred = curr;
 				curr = curr->next;
@@ -113,6 +114,8 @@ public:
 				return false;
 			}
 			else {
+				curr->marked = true;
+				atomic_thread_fence(memory_order_seq_cst); // x86 cpu에서는 펜스 없이도 잘 돌아감
 				pred->next = curr->next;
 				curr->Unlock();
 				pred->Unlock();
@@ -123,36 +126,15 @@ public:
 	}
 	bool Contains(int x)
 	{
-		while (true) {
-			NODE* pred = &head;
-			NODE* curr = pred->next;
-			while (curr->key < x) {
-				pred = curr;
-				curr = curr->next;
-			}
-			pred->Lock();
-			curr->Lock();
-
-			if (false == validate(pred, curr)) { // validate 가 false일때 락 걸어둔 노드 언락
-				curr->Unlock();
-				pred->Unlock();
-				continue;
-			}
-
-			if (curr->key == x) {
-				curr->Unlock();
-				pred->Unlock();
-				return true;
-			}
-			else {
-				curr->Unlock();
-				pred->Unlock();
-				return false;
-			}
+		SPNODE* curr = &head;
+		while (curr->key < x) {
+			curr = curr->next;
 		}
+		return curr->key == x && !curr->marked;
 	}
+
 	void display20() {
-		NODE* ptr = head.next;
+		SPNODE* ptr = head.next;
 		for (int i = 0; i < 20; ++i) {
 			if (&tail == ptr) break;
 			cout << ptr->key << ", ";
@@ -160,22 +142,13 @@ public:
 		}
 		cout << endl;
 	}
-	bool validate(NODE* pred, NODE* curr) {
-		NODE* node = &head;
-		while (node->key <= pred->key) {
-			if (node == pred) {
-				return pred->next == curr;
-			}
-			node = node->next;
-		}
-		return false;
-	}
+	
 };
 
 
 const auto NUM_TEST = 400'0000;
 const auto KEY_RANGE = 1000;
-OLIST my_set;
+SPLLIST my_set;
 
 void benchmark(int num_threads)
 {
