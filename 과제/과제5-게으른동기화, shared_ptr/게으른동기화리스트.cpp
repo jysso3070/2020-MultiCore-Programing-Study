@@ -13,14 +13,16 @@ using namespace chrono;
 class SPNODE {
 public:
 	int key;
-	shared_ptr<SPNODE> next;
+	SPNODE* next;
 	mutex n_lock;
 	bool marked;
 
-	SPNODE() {
+	SPNODE() { 
+		next = nullptr;
 		marked = false;
 	}
 	SPNODE(int x) {
+		next = nullptr;
 		key = x;
 		marked = false;
 	}
@@ -40,29 +42,31 @@ public:
 };
 
 class SPLLIST {
-	shared_ptr<SPNODE> head, tail;
+	SPNODE head, tail;
 	//mutex m_lock;
 public:
 	SPLLIST()
 	{
-		head = make_shared<SPNODE>(0x8000'0000);
-		tail = make_shared<SPNODE>(0x7FFF'FFFF);
-		head->next = tail;
+		head.key = 0x8000'0000;
+		tail.key = 0x7FFF'FFFF;
+		head.next = &tail;
 	}
 	~SPLLIST() {}
 	void clear()
 	{
-		head->next = tail;
-	}
-	// 오버헤드를 줄이기 위해 const와 래퍼런스로 넘김
-	bool validate(const shared_ptr<SPNODE> &pred, const shared_ptr<SPNODE> &curr) {
-		return !pred->marked && !curr->marked && pred->next == curr;
+		SPNODE* ptr = head.next;
+		while (ptr != &tail) {
+			SPNODE* to_delete = ptr;
+			ptr = ptr->next;
+			delete to_delete;
+		}
+		head.next = &tail;
 	}
 	bool Add(int x)
 	{
 		while (true) {
-			shared_ptr<SPNODE> pred = head;
-			shared_ptr<SPNODE> curr = pred->next;
+			SPNODE* pred = &head;
+			SPNODE* curr = pred->next;
 			while (curr->key < x) {
 				pred = curr;
 				curr = curr->next;
@@ -81,7 +85,7 @@ public:
 				return false;
 			}
 			else {
-				shared_ptr<SPNODE> new_node = make_shared<SPNODE>(x);
+				SPNODE* new_node = new SPNODE(x);
 				new_node->next = curr;
 				pred->next = new_node;
 				curr->Unlock();
@@ -93,8 +97,8 @@ public:
 	bool Remove(int x)
 	{
 		while (true) {
-			shared_ptr<SPNODE> pred = head;
-			shared_ptr<SPNODE> curr = pred->next;
+			SPNODE* pred = &head;
+			SPNODE* curr = pred->next;
 			while (curr->key < x) {
 				pred = curr;
 				curr = curr->next;
@@ -107,38 +111,43 @@ public:
 				pred->Unlock();
 				continue;
 			}
+
 			if (curr->key != x) {
 				curr->Unlock();
 				pred->Unlock();
 				return false;
 			}
 			else {
+				curr->marked = true;
+				atomic_thread_fence(memory_order_seq_cst); // x86 cpu에서는 펜스 없이도 잘 돌아감
 				pred->next = curr->next;
 				curr->Unlock();
 				pred->Unlock();
+				// delete 하지 않는다
 				return true;
 			}
 		}
 	}
 	bool Contains(int x)
 	{
-		shared_ptr<SPNODE> curr = head;
+		SPNODE* curr = &head;
 		while (curr->key < x) {
 			curr = curr->next;
 		}
 		return curr->key == x && !curr->marked;
 	}
-
 	void display20() {
-		shared_ptr<SPNODE> ptr = head->next;
+		SPNODE* ptr = head.next;
 		for (int i = 0; i < 20; ++i) {
-			if (tail == ptr) break;
+			if (&tail == ptr) break;
 			cout << ptr->key << ", ";
 			ptr = ptr->next;
 		}
 		cout << endl;
 	}
-	
+	bool validate(SPNODE* pred, SPNODE* curr) {
+		return !pred->marked && !curr->marked && pred->next == curr;
+	}
 };
 
 

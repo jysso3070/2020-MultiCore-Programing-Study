@@ -56,16 +56,16 @@ public:
 	}
 	// 오버헤드를 줄이기 위해 const와 래퍼런스로 넘김
 	bool validate(const shared_ptr<SPNODE> &pred, const shared_ptr<SPNODE> &curr) {
-		return !pred->marked && !curr->marked && pred->next == curr;
+		return !pred->marked && !curr->marked && atomic_load(&pred->next) == curr;
 	}
 	bool Add(int x)
 	{
 		while (true) {
 			shared_ptr<SPNODE> pred = head;
-			shared_ptr<SPNODE> curr = pred->next;
+			shared_ptr<SPNODE> curr = atomic_load(&pred->next);
 			while (curr->key < x) {
 				pred = curr;
-				curr = curr->next;
+				curr = atomic_load(&curr->next);
 			}
 			pred->Lock();
 			curr->Lock();
@@ -83,7 +83,7 @@ public:
 			else {
 				shared_ptr<SPNODE> new_node = make_shared<SPNODE>(x);
 				new_node->next = curr;
-				pred->next = new_node;
+				atomic_store(&pred->next, new_node);
 				curr->Unlock();
 				pred->Unlock();
 				return true;
@@ -94,10 +94,10 @@ public:
 	{
 		while (true) {
 			shared_ptr<SPNODE> pred = head;
-			shared_ptr<SPNODE> curr = pred->next;
+			shared_ptr<SPNODE> curr = atomic_load(&pred->next);
 			while (curr->key < x) {
 				pred = curr;
-				curr = curr->next;
+				curr = atomic_load(&curr->next);
 			}
 			pred->Lock();
 			curr->Lock();
@@ -113,7 +113,9 @@ public:
 				return false;
 			}
 			else {
-				pred->next = curr->next;
+				curr->marked = true;
+				atomic_thread_fence(memory_order_seq_cst);
+				atomic_store(&pred->next, atomic_load(&curr->next));
 				curr->Unlock();
 				pred->Unlock();
 				return true;
@@ -124,7 +126,7 @@ public:
 	{
 		shared_ptr<SPNODE> curr = head;
 		while (curr->key < x) {
-			curr = curr->next;
+			curr = atomic_load(&curr->next);
 		}
 		return curr->key == x && !curr->marked;
 	}
@@ -142,7 +144,7 @@ public:
 };
 
 
-const auto NUM_TEST = 400'0000;
+const auto NUM_TEST = 40'0000;
 const auto KEY_RANGE = 1000;
 SPLLIST my_set;
 
