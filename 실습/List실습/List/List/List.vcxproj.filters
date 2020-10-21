@@ -15,7 +15,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="게으른동기화리스트(shared_ptr).cpp">
+    <ClCompile Include="List.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

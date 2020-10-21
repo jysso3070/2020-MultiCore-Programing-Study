@@ -64,10 +64,19 @@ public:
 	{
 		int old_value = reinterpret_cast<int>(old_addr);
 		if (true == old_mark) old_value = old_value | 1;
+
 		int new_value = reinterpret_cast<int>(new_addr);
 		if (true == new_mark) new_value = new_value | 1;
-		//
+
 		return atomic_compare_exchange_strong(reinterpret_cast<atomic_int*>(&next), &old_value, new_value);
+	}
+
+	bool AttempMark()
+	{
+		int oldvalue = next;
+		if (0 != (oldvalue & 1)) return false;
+		int newvalue = oldvalue | 1;
+		return atomic_compare_exchange_strong(reinterpret_cast<atomic_int*>(&next), &oldvalue, newvalue);
 	}
 
 };
@@ -105,7 +114,7 @@ public:
 			bool is_removed;
 			LFNODE* su = cu->get_next(&is_removed);
 			while (true == is_removed) {
-				if (false == pr->CAS_NEXT(cu, su, false, false)) {
+				if (false == pr->CAS_NEXT(cu, su, false, false)) { // cas 실패했을때
 					goto retry;
 				}
 				cu = su;
@@ -141,45 +150,34 @@ public:
 	bool Remove(int x)
 	{
 		while (true) {
-			LFNODE* pred, * curr;
-			FIND(x, &pred, &curr);
+			LFNODE* prev, * curr;
+			FIND(x, &prev, &curr);
 
 			if (curr->key != x) {
 				return false;
 			}
 			else {
 				LFNODE* su = curr->get_next();
+				bool snip = curr->CAS_NEXT(su, su, false, true);
+				if (false == snip)
+				{
+					continue;
+				}
+				prev->CAS_NEXT(curr, su, false, false);
+				return true;
 			}
 		}
+
 	}
 	bool Contains(int x)
 	{
 		while (true) {
-			NODE* pred = &head;
-			NODE* curr = pred->next;
+			bool is_removed = false;
+			LFNODE* curr = &head;
 			while (curr->key < x) {
-				pred = curr;
-				curr = curr->next;
+				curr = curr->get_next(&is_removed);
 			}
-			pred->Lock();
-			curr->Lock();
-
-			if (false == validate(pred, curr)) { // validate 가 false일때 락 걸어둔 노드 언락
-				curr->Unlock();
-				pred->Unlock();
-				continue;
-			}
-
-			if (curr->key == x) {
-				curr->Unlock();
-				pred->Unlock();
-				return true;
-			}
-			else {
-				curr->Unlock();
-				pred->Unlock();
-				return false;
-			}
+			return curr->key == x && !is_removed;
 		}
 	}
 	void display20() {
