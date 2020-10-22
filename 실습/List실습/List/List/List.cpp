@@ -591,7 +591,7 @@ public:
 class SPLLIST {
 	shared_ptr<SPNODE> head, tail;
 public:
-	SPLLIST()
+	SPLLIST() // 생성자는
 	{
 		head = make_shared<SPNODE>(0x80000000);
 		tail = make_shared<SPNODE>(0x7FFFFFFF);
@@ -732,7 +732,7 @@ public:
 	{
 		int value = next;
 		*is_removed = (0 != (value & 1));
-		return reinterpret_cast<LFNODE*>(next & 0xFFFFFFFE);
+		return reinterpret_cast<LFNODE*>(value &0xFFFFFFFE);
 	}
 
 	bool CAS_NEXT(LFNODE* old_addr, LFNODE* new_addr, bool old_mark, bool new_mark)
@@ -753,7 +753,8 @@ public:
 		int newvalue = oldvalue | 1;
 		return atomic_compare_exchange_strong(reinterpret_cast<atomic_int*>(&next), &oldvalue, newvalue);
 	}
-
+	bool removed() {
+	}
 };
 
 class LFLIST {
@@ -766,7 +767,7 @@ public:
 		tail.key = 0x7FFF'FFFF;
 		head.set_next(&tail, false);
 	}
-	~LFLIST() {}
+	~LFLIST() { clear(); }
 	void clear()
 	{
 		LFNODE* ptr = head.get_next();
@@ -867,10 +868,10 @@ public:
 };
 
 
-constexpr int NUM_TEST = 4000000;
+constexpr int NUM_TEST = 40'0000;
 constexpr int KEY_RANGE = 1000;
 
-LFLIST my_set;
+SPLLIST my_set;
 
 void benchmark(int num_threads)
 {
