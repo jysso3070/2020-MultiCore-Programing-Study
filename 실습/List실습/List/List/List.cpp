@@ -3,9 +3,14 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
+#include <set>
 
 using namespace std;
 using namespace chrono;
+
+constexpr int MAX_THREAD = 8;
+
+thread_local int thread_id;
 
 class NODE {
 public:
@@ -867,20 +872,311 @@ public:
 	}
 };
 
+class SET_LIST {
+	set<int> m_set;
+public:
+	SET_LIST()
+	{
+	}
+	~SET_LIST()
+	{
+	}
 
-constexpr int NUM_TEST = 40'0000;
+	void clear()
+	{
+		m_set.clear();
+	}
+
+	bool Add(int x)
+	{
+		if (0 != m_set.count(x)) return false;
+		m_set.insert(x);
+		return true;
+	}
+
+	bool Remove(int x)
+	{
+		if (0 == m_set.count(x)) return false;
+		m_set.erase(x);
+		return true;
+	}
+
+	bool Contains(int x)
+	{
+		return 0 != m_set.count(x);
+	}
+	void display20()
+	{
+		int count = 20;
+		for (auto v : m_set) {
+			cout << v << ", ";
+			if (count-- <= 0)
+				break;
+		}
+		cout << endl;
+	}
+};
+
+// stl set 성긴 동기화
+class SET_CLIST {
+	set <int> m_set;
+	mutex m_l;
+public:
+	SET_CLIST()
+	{
+	}
+	~SET_CLIST()
+	{
+	}
+
+	void clear()
+	{
+		m_set.clear();
+	}
+
+	bool Add(int x)
+	{
+		lock_guard<mutex>L(m_l);
+		if (0 != m_set.count(x)) return false;
+		m_set.insert(x);
+		return true;
+	}
+
+	bool Remove(int x)
+	{
+		lock_guard<mutex>L(m_l);
+		if (0 == m_set.count(x)) return false;
+		m_set.erase(x);
+		return true;
+	}
+
+	bool Contains(int x)
+	{
+		lock_guard<mutex>L(m_l);
+		return 0 != m_set.count(x);
+	}
+
+	void display20()
+	{
+		int counter = 20;
+		for (auto v : m_set) {
+			cout << v << ", ";
+			if (counter-- <= 0) break;
+		}
+		cout << endl;
+	}
+};
+
+constexpr int ADD = 1;
+constexpr int REMOVE = 2;
+constexpr int CONTAINS = 3;
+constexpr int CLEAR = 4;
+constexpr int DISPLAY_20 = 5;
+
+struct Invocation {
+	int method_type;
+	int parameter1;
+};
+
+struct Response {
+	bool resp1;
+};
+
+struct SeqObject_SET {
+	set <int> m_set;
+public:
+	Response apply(Invocation inv)
+	{
+		switch (inv.method_type) {
+		case ADD:
+			if (0 != m_set.count(inv.parameter1)) return Response{ false };
+			m_set.insert(inv.parameter1);
+			return Response{ true };
+		case REMOVE:
+			if (0 == m_set.count(inv.parameter1)) return Response{ false };
+			m_set.erase(inv.parameter1);
+			return Response{ true };
+		case CONTAINS:
+			return Response{ 0 != m_set.count(inv.parameter1) };
+		case CLEAR:
+			m_set.clear();
+			return Response();
+		case DISPLAY_20:
+			int counter = 20;
+			for (auto v : m_set) {
+				cout << v << ", ";
+				if (counter-- <= 0) break;
+			}
+			cout << endl;
+			return Response();
+			break;
+		}
+	}
+};
+
+constexpr int NUM_TEST = 400;
 constexpr int KEY_RANGE = 1000;
 
-SPLLIST my_set;
+class SEQ_SET_LIST {
+	SeqObject_SET m_set;
+public:
+	SEQ_SET_LIST()
+	{
+	}
+	~SEQ_SET_LIST()
+	{
+	}
 
-void benchmark(int num_threads)
+	bool Add(int x)
+	{
+		return m_set.apply(Invocation{ ADD, x }).resp1;
+	}
+
+	bool Remove(int x)
+	{
+		return m_set.apply(Invocation{ REMOVE, x }).resp1;
+	}
+
+	bool Contains(int x)
+	{
+		return m_set.apply(Invocation{ CONTAINS, x }).resp1;
+	}
+
+	void clear()
+	{
+		m_set.apply(Invocation{ CLEAR, 0 });
+	}
+
+	void display20()
+	{
+		m_set.apply(Invocation{ DISPLAY_20, 0 });
+		return;
+	}
+};
+
+class UNODE;
+
+class CONSENSUS {
+	atomic_int next;
+public:
+	CONSENSUS() {
+		next = -1;
+	}
+	UNODE* decide(UNODE* value)
+	{
+		int v = reinterpret_cast<int> (value);
+		int ov = -1;
+		atomic_compare_exchange_strong(&next, &ov, v);
+		v = next;
+		return reinterpret_cast<UNODE*>(v);
+	}
+};
+
+class UNODE {
+public:
+	Invocation inv;
+	UNODE* next;
+	int	seq;
+	CONSENSUS decide_next;
+public:
+	UNODE(Invocation pinv)
+	{
+		inv = pinv;
+		next = nullptr;
+		seq = 0;
+	}
+	UNODE()
+	{
+		next = nullptr;
+		seq = 0;
+	}
+};
+
+class LFUniversal_SET {
+	UNODE tail;
+	UNODE* head[MAX_THREAD];
+	UNODE* get_new()
+	{
+		UNODE* new_node = head[0];
+		for (auto p : head) {
+			if (new_node->seq < p->seq) new_node = p;
+		}
+		return new_node;
+	}
+
+public:
+	LFUniversal_SET()
+	{
+		for (auto& p : head) p = &tail;
+	}
+	Response apply(Invocation inv)
+	{
+		UNODE* prefer = new UNODE(inv);
+		while (0 == prefer->seq) {
+			UNODE* before = get_new();
+			UNODE* after = before->decide_next.decide(prefer);
+			before->next = after;
+			after->seq = before->seq + 1;
+			head[thread_id] = after;
+		}
+		SeqObject_SET s_set;
+		UNODE* p = tail.next;
+		while (p != prefer && p->inv.method_type != DISPLAY_20) {
+			s_set.apply(p->inv);
+			p = p->next;
+		}
+		return s_set.apply(inv);
+	}
+};
+
+class LF_SET_LIST {
+	LFUniversal_SET m_set;
+public:
+	LF_SET_LIST()
+	{
+	}
+	~LF_SET_LIST()
+	{
+	}
+
+	bool Add(int x)
+	{
+		return m_set.apply(Invocation{ ADD, x }).resp1;
+	}
+
+	bool Remove(int x)
+	{
+		return m_set.apply(Invocation{ REMOVE, x }).resp1;
+	}
+
+	bool Contains(int x)
+	{
+		return m_set.apply(Invocation{ CONTAINS, x }).resp1;
+	}
+
+	void clear()
+	{
+		m_set.apply(Invocation{ CLEAR, 0 });
+	}
+
+	void display20()
+	{
+		m_set.apply(Invocation{ DISPLAY_20, 0 });
+		return;
+	}
+};
+
+LF_SET_LIST my_set;
+
+void benchmark(int num_threads, int t_id)
 {
+	thread_id = t_id;
 	for (int i = 0; i < NUM_TEST / num_threads; ++i) {
 		switch (rand() % 3) {
-		case 0 : 
+		case 0:
 			my_set.Add(rand() % KEY_RANGE);
 			break;
-		case 1 :
+		case 1:
 			my_set.Remove(rand() % KEY_RANGE);
 			break;
 		case 2:
@@ -890,8 +1186,6 @@ void benchmark(int num_threads)
 	}
 }
 
-constexpr int MAX_THREAD = 8;
-
 int main()
 {
 	for (int num = 1; num <= MAX_THREAD; num = num * 2) {
@@ -899,13 +1193,13 @@ int main()
 		my_set.clear();
 		auto start_t = high_resolution_clock::now();
 		for (int i = 0; i < num; ++i)
-			threads.emplace_back(benchmark, num);
+			threads.emplace_back(benchmark, num, i);
 		for (auto& th : threads) th.join();
 		auto end_t = high_resolution_clock::now();
 		auto du = end_t - start_t;
 
 		cout << num << " Threads,  ";
-		cout << "Exec time " << 
+		cout << "Exec time " <<
 			duration_cast<milliseconds>(du).count() << "ms  ";
 		my_set.display20();
 	}
