@@ -1014,7 +1014,7 @@ public:
 	}
 };
 
-constexpr int NUM_TEST = 4000;
+constexpr int NUM_TEST = 400;
 constexpr int KEY_RANGE = 1000;
 
 class SEQ_SET_LIST {
