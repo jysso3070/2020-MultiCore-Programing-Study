@@ -19,6 +19,7 @@ public:
 	NODE(){
 		next = nullptr;
 	}
+
 	NODE(int x){
 		key = x;
 		next = nullptr;
@@ -88,95 +89,6 @@ public:
 			deq_lock.unlock();
 			delete to_delete;
 			return result;
-		}
-	}
-
-	void display20()
-	{
-		NODE* ptr = head->next;
-		for (int i = 0; i < 20; ++i) {
-			if (nullptr == ptr) break;
-			cout << ptr->key << ", ";
-			ptr = ptr->next;
-		}
-		cout << endl;
-	}
-};
-
-// 락프리 무제한 큐
-class LFQUEUE {
-	NODE* volatile head;
-	NODE* volatile tail;
-	mutex deq_lock, enq_lock;
-	//null_mutex m_lock;
-public:
-	LFQUEUE()
-	{
-		head = tail = new NODE();
-	}
-	~LFQUEUE()
-	{
-		clear();
-		delete head;
-	}
-
-	void clear()
-	{
-		NODE* ptr; 
-		while (head->next != nullptr) { 
-			ptr = head->next; 
-			head->next = head->next->next; 
-			delete ptr; 
-		} 
-		tail = head;
-	}
-
-	bool CAS(NODE* volatile* addr, NODE* old_node, NODE* new_node) {
-		return atomic_compare_exchange_strong(reinterpret_cast<volatile atomic_int*>(addr), 
-			reinterpret_cast<int*>(&old_node), reinterpret_cast<int>(new_node));
-	}
-
-	void Enq(int x)
-	{
-		NODE* new_node = new NODE(x);
-		while (true) { 
-			NODE* last = tail; 
-			NODE* next = last->next; 
-			if (last != tail) continue; 
-			if (next != nullptr) { 
-				CAS(&tail, last, next); 
-				continue; 
-			} 
-			if (false == CAS(&last->next, nullptr, new_node)) 
-				continue; 
-			CAS(&tail, last, new_node); 
-			return; 
-		}
-
-	}
-
-	int Deq()
-	{
-		while (true) {
-			NODE* first = head; 
-			NODE* next = first->next; 
-			NODE* last = tail; 
-			NODE* lastnext = last->next; 
-			if (first != head) continue; 
-			if (last == first) { 
-				if (lastnext == nullptr) { 
-					//cout << "EMPTY!!!\n"; 
-					this_thread::sleep_for(1ms); 
-					return -1; 
-				} else { 
-					CAS(&tail, last, lastnext); continue; 
-				} 
-			} if (nullptr == next) continue; 
-			int result = next->key; 
-			if (false == CAS(&head, first, next)) continue; 
-			first->next = nullptr; 
-			//delete first; 오동작 할 수 있으니 delete는 일단 하지 말기. 
-			return result; 
 		}
 	}
 
@@ -1001,7 +913,7 @@ public:
 constexpr int NUM_TEST = 1000'0000;
 
 
-LFQUEUE my_queue;
+CQUEUE my_queue;
 
 void benchmark(int num_threads)
 {
