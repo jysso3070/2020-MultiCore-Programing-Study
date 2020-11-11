@@ -1062,6 +1062,9 @@ public:
 	CONSENSUS() {
 		next = -1;
 	}
+	void clear() {
+		next = -1;
+	}
 	UNODE* decide(UNODE* value)
 	{
 		int v = reinterpret_cast<int> (value);
@@ -1089,6 +1092,10 @@ public:
 	{
 		next = nullptr;
 		seq = 0;
+	}
+	void clear() {
+		next = nullptr;
+		decide_next.clear();
 	}
 };
 
@@ -1127,6 +1134,8 @@ public:
 		}
 		return s_set.apply(inv);
 	}
+	void clear() {
+	}
 };
 
 class LF_SET_LIST {
@@ -1157,6 +1166,7 @@ public:
 	void clear()
 	{
 		m_set.apply(Invocation{ CLEAR, 0 });
+		//m_set.
 	}
 
 	void display20()
