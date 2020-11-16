@@ -107,7 +107,6 @@ public:
 class LFQUEUE {
 	NODE* volatile head;
 	NODE* volatile tail;
-	mutex deq_lock, enq_lock;
 	//null_mutex m_lock;
 public:
 	LFQUEUE()
@@ -141,23 +140,30 @@ public:
 			NODE* last = tail;
 			NODE* next = last->next;
 			if (last != tail) continue;
-			if (nullptr != next) {
+			if (nullptr == next) {
+				if (CAS(&last->next, nullptr, new_node)) {
+					CAS(&tail, last, new_node);
+					return;
+				}
+			}
+			else {
+				CAS(&tail, last, next);
+			}
+
+			/*if (nullptr != next) {
 				CAS(&tail, last, next);
 				continue;
 			}
 			if (false == CAS(&(tail->next), next, new_node))
 				continue;
 			CAS(&tail, last, next);
-			return;
+			return;*/
 		}
 
 	}
 
 	int Deq()
 	{
-		if (nullptr == head->next) {
-			return -1; //
-		}
 		while (true) {
 			NODE* first = head;
 			NODE* last = tail;
@@ -170,7 +176,7 @@ public:
 			}
 			int value = next->key;
 			if (false == CAS(&head, first, next)) continue;
-			//delete first;
+			delete first;
 			return value;
 		}
 	}
@@ -238,7 +244,7 @@ public:
 		return atomic_compare_exchange_strong(
 			reinterpret_cast<volatile atomic_llong*>(next->ptr),
 			reinterpret_cast<long long*>(&old_v.ptr),
-			reinterpret_cast<long long>(new_v.ptr));
+			reinterpret_cast<long long>(&new_v.ptr));
 	}
 
 	bool CAS(NODE* volatile * next, NODE* old_p, NODE* new_p) {
@@ -272,26 +278,26 @@ public:
 	{
 		while (true) {
 			int firststamp;
-			NODE* first = head.get_addr(&firststamp);
 			int laststamp;
+			NODE* first = head.get_addr(&firststamp);
 			NODE* last = tail.get_addr(&laststamp);
 			NODE* next = first->next;
-			if (head != first) continue;
+			if (head.get_addr() != first) continue;
 			if (nullptr == next) return -1; //empty
 			if (last == first) {
-				CAS(&tail, last, next);
+				CAS(&tail, last, next, laststamp, laststamp+1);
 				continue;
 			}
 			int value = next->key;
-			if (false == CAS(&head, first, next)) continue;
-			//delete first;
+			if (false == CAS(&head, first, next, firststamp, firststamp+1)) continue;
+			delete first;
 			return value;
 		}
 	}
 
 	void display20()
 	{
-		NODE* ptr = head->next;
+		NODE* ptr = head.get_addr()->next;
 		for (int i = 0; i < 20; ++i) {
 			if (nullptr == ptr) break;
 			cout << ptr->key << ", ";
@@ -302,7 +308,6 @@ public:
 };
 
 constexpr int NUM_TEST = 1000'0000;
-
 
 LFQUEUE my_queue;
 
