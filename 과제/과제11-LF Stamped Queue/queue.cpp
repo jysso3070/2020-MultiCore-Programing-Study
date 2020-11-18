@@ -147,15 +147,6 @@ public:
 			else {
 				CAS(&tail, last, next);
 			}
-
-			/*if (nullptr != next) {
-				CAS(&tail, last, next);
-				continue;
-			}
-			if (false == CAS(&(tail->next), next, new_node))
-				continue;
-			CAS(&tail, last, next);
-			return;*/
 		}
 
 	}
@@ -323,21 +314,20 @@ public:
 			NODE* last = tail.get_addr(&laststamp);
 			NODE* next = first->next;
 
-			if (firststamp != head.get_stamp()) continue;	 // ABA문제 해결.
+			if (firststamp != head.get_stamp()) continue;
 			if (nullptr == next) return -1;
-			if (first == last) {		// empty일때 tail을 전진시키고 continue
+			if (first == last) {
 				CAS(&tail, last, next, laststamp, laststamp + 1);
 				continue;
 			}
 			int value;
-			if (nullptr != next) value = next->key; // next가 delete되어 오염될 수 있어서 freeList를 사용, 그러나 이것도 lock free queue다
+			if (nullptr != next) value = next->key; 
 			if (false == CAS(&head, first, next, firststamp, firststamp + 1)) continue;
-			//delete first;
 			freelist.free_node(first);
 			return value;
 		}
 	}
-	
+
 	void display20()
 	{
 		NODE* ptr = head.get_addr()->next;
@@ -349,7 +339,6 @@ public:
 		cout << endl;
 	}
 };
-// lockfree보다 성능이 좋은이유는 new, delete 오버헤드를 줄여서
 
 constexpr int NUM_TEST = 1000'0000;
 constexpr int MAX_THREAD = 8;
