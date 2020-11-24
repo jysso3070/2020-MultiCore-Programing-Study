@@ -125,9 +125,123 @@ public:
 			NODE* next = first->next;
 			int value = first->key;
 			if (top != first) continue;
-			if (true == CAS(&top, first, next))
+			if (true == CAS(&top, first, next)) {
+				//delete first;
 				return value;
+				// ABA문제 때문에 delete는 하지 않는다
+			}
+		}
+	}
+
+	void display20()
+	{
+		NODE* ptr = top;
+		for (int i = 0; i < 20; ++i) {
+			if (nullptr == ptr) break;
+			cout << ptr->key << ", ";
+			ptr = ptr->next;
+		}
+		cout << endl;
+	}
+};
+
+// 백오프
+class BACKOFF {
+	int minDelay, maxDelay;
+	int limit;
+public:
+	void init(int min, int max) {
+		minDelay = min;
+		maxDelay = max;
+		limit = min;
+	}
+
+	void backoff() {
+		int delay = 0;
+		if (limit != 0) delay = rand() % limit;
+		//if (0 == limit) return;
+		limit *= 2;
+		if (limit > maxDelay) limit = maxDelay;
+
+		//this_thread::sleep_for(chrono::microseconds(delay));
+
+
+		int current, start;
+		// 클럭 레지스터를 읽는 명령어 사용
+		_asm RDTSC;
+		_asm mov start, eax;
+		do {
+			_asm RDTSC;
+			_asm mov current, eax;
+		} while (current - start < delay);
+
+		//   _asm mov eax, delay;
+		//myloop:
+		//   _asm dec eax;
+		//   _asm jnz myloop;
+	}
+};
+
+// 락프리백오프스택
+class LFBOSTACK {
+	BACKOFF bo;
+	NODE* volatile top;
+public:
+	LFBOSTACK() {
+		top = nullptr;
+		bo.init(1, 1000);
+	}
+	~LFBOSTACK() {
+		clear();
+	}
+
+	void clear()
+	{
+		while (nullptr != top) {
+			NODE* to_delete = top;
+			top = top->next;
+			delete to_delete;
+		}
+	}
+
+	bool CAS(NODE* volatile* ptr, NODE* o_node, NODE* n_node)
+	{
+		return atomic_compare_exchange_strong(
+			reinterpret_cast<volatile atomic_int*>(ptr),
+			reinterpret_cast<int*>(&o_node),
+			reinterpret_cast<int>(n_node));
+	}
+
+	void Push(int key)
+	{
+		NODE* e = new NODE(key);
+
+		while (true) {
+			NODE* first = top;
+			e->next = first;
+			if (true == CAS(&top, first, e))
+				return;
+			bo.backoff();
+		}
+	}
+
+	int Pop()
+	{
+		while (true) {
+			NODE* first = top;
+			if (nullptr == top) {
+				return -2; // EMPTY
+			}
+			NODE* next = first->next;
+			int value = first->key;
+			if (top != first) continue;
+			if (true == CAS(&top, first, next)) {
+				//delete first;
+				return value;
+			}
 			// ABA문제 때문에 delete는 하지 않는다
+
+			bo.backoff();
 		}
 	}
 
