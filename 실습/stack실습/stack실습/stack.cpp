@@ -316,7 +316,7 @@ public:
 			{
 				int ret = get_value();
 				if (true == CAS(WAITING_ST, BUSY_ST, ret, value))
-					return ret;
+					return -1;
 				else continue;
 			}
 				break;
