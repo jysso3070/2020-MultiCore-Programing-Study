@@ -172,7 +172,7 @@ public:
 	int key;
 	LSKNODE* volatile next[MAX_LEVEL + 1];
 	int toplevel;
-	bool is_removed;
+	volatile bool is_removed;
 	volatile bool is_fully_linked;
 	recursive_mutex n_lock;
 
@@ -272,9 +272,9 @@ public:
 
 			LSKNODE* new_node = new LSKNODE(x, toplevel);
 
-			for (int i = 0; i < toplevel; i++)
+			for (int i = 0; i <= toplevel; ++i)
 				new_node->next[i] = currs[i];
-			for (int i = 0; i < toplevel; i++)
+			for (int i = 0; i <= toplevel; ++i)
 				preds[i]->next[i] = new_node;
 
 			for (int i = 0; i <= lock_index; ++i)
@@ -288,56 +288,48 @@ public:
 	{
 		LSKNODE* preds[MAX_LEVEL + 1];
 		LSKNODE* currs[MAX_LEVEL + 1];
+
+		int l_found = Find(x, preds, currs);
+
 		LSKNODE* victim = nullptr;
-		bool is_removed = false;
-		int toplevel = -1;
+		if (-1 != l_found)
+			victim = currs[l_found];
 
-		while (true) {
-			int l_found = Find(x, preds, currs);
-			if (-1 != l_found){ victim = currs[l_found]; }
-			if ((true == is_removed) ||
-				(-1 != l_found) &&
-				(true == victim->is_fully_linked) &&
-				(victim->toplevel == l_found) &&
-				(false == victim->is_removed)) {
-				if (false == is_removed) {
-					toplevel = victim->toplevel;
-					victim->n_lock.lock();
-					if (true == victim->is_removed ||
-						false == victim->is_fully_linked) {
-						victim->n_lock.unlock();
-						return false;
-					}
-					victim->is_removed = true;
-					is_removed = true;
-				}
-				int lock_index = -1;
-				bool is_valid = true;
-				for (int i = 0; i <= toplevel; i++) {
-					preds[i]->n_lock.lock();
-					lock_index = i;
-					is_valid = (false == preds[i]->is_removed) &&
-						(preds[i]->next[i] == victim);
-					if (false == is_valid)
-						break;
-				}
-				if (false == is_valid) {
-					for (int i = 0; i <= lock_index; ++i)
-						preds[i]->n_lock.unlock();
-					continue;
-				}
-				for (int i = toplevel; i >= 0; --i) {
-					preds[i]->next[i] = victim->next[i];
-				}
+		if ((-1 != l_found) && (false == victim->is_removed)
+			&& (true == victim->is_fully_linked)
+			&& (l_found == victim->toplevel)) {
+			victim->n_lock.lock();
+			if (true == victim->is_removed) {
 				victim->n_lock.unlock();
-
+				return false;
+			}
+			victim->is_removed = true;
+		}
+		else
+			return false;
+		while (true) {
+			bool valid = true;
+			int lock_index = 0;
+			for (int i = 0; i <= victim->toplevel; ++i) {
+				preds[i]->n_lock.lock();
+				lock_index = i;
+				valid = (false == preds[i]->is_removed) && (preds[i]->next[i] == victim);
+				if (false == valid) { break; }
+			}
+			if (false == valid) {
 				for (int i = 0; i <= lock_index; ++i) {
 					preds[i]->n_lock.unlock();
 				}
-				return true;
+				Find(x, preds, currs);
+				continue;
 			}
-			else
-				return false;
+
+			for (int i = 0; i <= victim->toplevel; ++i)
+				preds[i]->next[i] = victim->next[i];
+			for (int i = 0; i <= lock_index; ++i)
+				preds[i]->n_lock.unlock();
+			victim->n_lock.unlock();
+			return true;
 		}
 	}
 
@@ -346,10 +338,9 @@ public:
 		LSKNODE* preds[MAX_LEVEL + 1];
 		LSKNODE* currs[MAX_LEVEL + 1];
 
-		int lFound = Find(x, preds, currs);
-		return (lFound != -1 &&
-			true == currs[lFound]->is_fully_linked &&
-			false == currs[lFound]->is_removed);
+		int l_found = Find(x, preds, currs);
+		return (l_found != -1) && (false == currs[l_found]->is_removed)
+			&& (true == currs[l_found]->is_fully_linked);
 	}
 
 	void display20()
